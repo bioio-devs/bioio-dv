@@ -1,17 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Tuple
 
 import xarray as xr
-from bioio_base.dimensions import Dimensions
-from bioio_base.reader import Reader as BaseReader
+from bioio_base import constants, dimensions, exceptions, io, reader, types
+from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
+from mrc import DVFile
+from resource_backed_dask_array import resource_backed_dask_array
 
 ###############################################################################
 
 
-class Reader(BaseReader):
+class Reader(reader.Reader):
     """
     The main class of each reader plugin. This class is subclass
     of the abstract class reader (BaseReader) in bioio-base.
@@ -35,7 +39,7 @@ class Reader(BaseReader):
     _xarray_data: Optional["xr.DataArray"] = None
     _mosaic_xarray_dask_data: Optional["xr.DataArray"] = None
     _mosaic_xarray_data: Optional["xr.DataArray"] = None
-    _dims: Optional[Dimensions] = None
+    _dims: Optional[dimensions.Dimensions] = None
     _metadata: Optional[Any] = None
     _scenes: Optional[Tuple[str, ...]] = None
     _current_scene_index: int = 0
@@ -44,66 +48,59 @@ class Reader(BaseReader):
     _fs: "AbstractFileSystem"
     _path: str
 
-    # Required Methods
-
-    def __init__(image: Any, **kwargs: Any):
-        """
-        Store / cache certain parameters required for later reading.
-
-        Try not to read the image into memory here.
-        """
-        raise NotImplementedError()
-
     @staticmethod
-    def _is_supported_image(fs: "AbstractFileSystem", path: str, **kwargs: Any) -> bool:
-        """
-        Perform a check to determine if the object(s) or path(s) provided as
-        parameters are supported by this reader.
-        """
-        raise NotImplementedError()
+    def _is_supported_image(fs: AbstractFileSystem, path: str, **kwargs: Any) -> bool:
+        return DVFile.is_supported_file(path)
+
+    def __init__(self, image: types.PathLike, fs_kwargs: Dict[str, Any] = {}):
+        self._fs, self._path = io.pathlike_to_fs(
+            image,
+            enforce_exists=True,
+            fs_kwargs=fs_kwargs,
+        )
+        # Catch non-local file system
+        if not isinstance(self._fs, LocalFileSystem):
+            raise NotImplementedError(
+                f"dv reader not yet implemented for non-local file system. "
+                f"Received URI: {self._path}, which points to {type(self._fs)}."
+            )
+
+        if not self._is_supported_image(self._fs, self._path):
+            raise exceptions.UnsupportedFileFormatError(
+                self.__class__.__name__, self._path
+            )
 
     @property
     def scenes(self) -> Tuple[str, ...]:
-        """
-        Return the list of available scenes for the file using the
-        cached parameters stored to the object in the __init__.
-        """
-        raise NotImplementedError()
+        return ("Image:0",)
 
-    def _read_delayed(self) -> "xr.DataArray":
-        """
-        Return an xarray DataArray filled with a delayed dask array, coordinate planes,
-        and any metadata stored in the attrs.
+    def _read_delayed(self) -> xr.DataArray:
+        return self._xarr_reformat(delayed=True)
 
-        Metadata should be labelled with one of the bioio-base constants.
-        """
-        raise NotImplementedError()
+    def _read_immediate(self) -> xr.DataArray:
+        return self._xarr_reformat(delayed=False)
 
-    def _read_immediate(self) -> "xr.DataArray":
-        """
-        Return an xarray DataArray filled with an in-memory numpy ndarray,
-        coordinate planes, and any metadata stored in the attrs.
+    def _xarr_reformat(self, delayed: bool) -> xr.DataArray:
+        with DVFile(self._path) as dv:
+            xarr = dv.to_xarray(delayed=delayed, squeeze=False)
+            if delayed:
+                xarr.data = resource_backed_dask_array(xarr.data, dv)
+            xarr.attrs[constants.METADATA_UNPROCESSED] = xarr.attrs.pop("metadata")
+        return xarr
 
-        Metadata should be labelled with one of the bioio-base constants.
+    @property
+    def physical_pixel_sizes(self) -> types.PhysicalPixelSizes:
         """
-        raise NotImplementedError()
+        Returns
+        -------
+        sizes: PhysicalPixelSizes
+            Using available metadata, the floats representing physical pixel sizes for
+            dimensions Z, Y, and X.
 
-    # Optional Methods
-
-    def _get_stitched_dask_mosaic(self) -> "xr.DataArray":
+        Notes
+        -----
+        We currently do not handle unit attachment to these values. Please see the file
+        metadata for unit information.
         """
-        If your file returns an `M` dimension for "Mosiac Tile",
-        this function should stitch and return the stitched data as
-        an xarray DataArray both operating against the original delayed array
-        and returning a delayed array.
-        """
-        return super()._get_stitched_dask_mosaic()
-
-    def _get_stitched_mosaic(self) -> "xr.DataArray":
-        """
-        If your file returns an `M` dimension for "Mosiac Tile",
-        this function should stitch and return the stitched data as
-        an xarray DataArray both operating against the original in-memory array
-        and returning a in-memory array.
-        """
-        return super()._get_stitched_mosaic()
+        with DVFile(self._path) as dvfile:
+            return types.PhysicalPixelSizes(*dvfile.voxel_size[::-1])
