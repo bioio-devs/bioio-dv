@@ -21,8 +21,8 @@ class ReaderMetadata(bioio_base.reader_metadata.ReaderMetadata):
         """
         Return a list of file extensions this plugin supports reading.
         """
-        raise NotImplementedError()
-        # return ["ext", "extn"]
+
+        return [".dv", ".r3d"]
 
     @staticmethod
     def get_reader() -> bioio_base.reader.Reader:
