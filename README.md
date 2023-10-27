@@ -1,7 +1,7 @@
 # bioio-dv
 
-[![Build Status](https://github.com/bioio-devs/bioio-dv/workflows/CI/badge.svg)](https://github.com/bioio-devs/bioio-dv/actions)
-[![Documentation](https://github.com/bioio-devs/bioio-dv/workflows/Documentation/badge.svg)](https://bioio-devs.github.io/bioio-dv)
+[![Build Status](https://github.com/bioio-devs/bioio-dv/actions/workflows/ci.yml/badge.svg)](https://github.com/bioio-devs/bioio-dv/actions)
+[![Documentation](https://github.com/bioio-devs/bioio-dv/actions/workflows/docs.yml/badge.svg)](https://bioio-devs.github.io/bioio-dv)
 
 A BioIO reader plugin for reading Digital Video (DV) files.
 
