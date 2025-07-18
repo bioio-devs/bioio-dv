@@ -23,6 +23,10 @@ clean:
 install:
 	pip install -e .[lint,test]
 	pre-commit install
+
+# run performance tests
+benchmark:
+	python scripts/benchmark.py
 	
 # lint, format, and check all files
 lint:
